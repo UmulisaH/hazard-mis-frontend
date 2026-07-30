@@ -1,0 +1,39 @@
+<svg width="1600" height="1200" viewBox="0 0 1600 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F5EE"/>
+      <stop offset="0.55" stop-color="#EDE6D8"/>
+      <stop offset="1" stop-color="#DCE5E8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1160 260) rotate(90) scale(320 420)">
+      <stop stop-color="#FBBF24" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#FBBF24" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="1200" fill="url(#bg)"/>
+  <circle cx="1180" cy="250" r="360" fill="url(#glow)"/>
+  <circle cx="370" cy="220" r="180" fill="#FFFFFF" fill-opacity="0.55"/>
+  <circle cx="1390" cy="1040" r="280" fill="#C9D5D8" fill-opacity="0.42"/>
+  <path d="M180 810C320 690 500 640 700 650C930 661 1115 742 1325 706C1410 691 1498 659 1580 614V1200H0V905C55 860 113 845 180 810Z" fill="#CCD7DA" fill-opacity="0.55"/>
+  <path d="M240 820H1378V860C1378 904 1342 940 1298 940H320C275 940 240 904 240 860V820Z" fill="#1F2937" fill-opacity="0.12"/>
+  <rect x="880" y="500" width="290" height="220" rx="30" fill="#FFFFFF" fill-opacity="0.7" stroke="#1F2937" stroke-opacity="0.16"/>
+  <rect x="920" y="540" width="200" height="18" rx="9" fill="#1F2937" fill-opacity="0.15"/>
+  <rect x="920" y="578" width="150" height="18" rx="9" fill="#1F2937" fill-opacity="0.12"/>
+  <rect x="920" y="616" width="220" height="18" rx="9" fill="#1F2937" fill-opacity="0.1"/>
+  <circle cx="470" cy="700" r="110" fill="#111827"/>
+  <circle cx="660" cy="705" r="100" fill="#111827"/>
+  <circle cx="820" cy="720" r="92" fill="#111827"/>
+  <path d="M384 1045C384 941 437 862 470 862C503 862 556 941 556 1045V1110H384V1045Z" fill="#111827"/>
+  <path d="M580 1045C580 948 627 870 660 870C693 870 740 948 740 1045V1110H580V1045Z" fill="#111827"/>
+  <path d="M742 1040C742 947 781 876 820 876C859 876 898 947 898 1040V1110H742V1040Z" fill="#111827"/>
+  <path d="M315 842L470 754L636 838L518 894H432L315 842Z" fill="#2F3742"/>
+  <path d="M516 842L660 762L812 840L694 894H584L516 842Z" fill="#2F3742"/>
+  <path d="M683 852L820 790L958 850L858 898H758L683 852Z" fill="#2F3742"/>
+  <rect x="102" y="154" width="268" height="160" rx="26" fill="#FFFFFF" fill-opacity="0.82" stroke="#111827" stroke-opacity="0.08"/>
+  <rect x="134" y="190" width="164" height="16" rx="8" fill="#111827" fill-opacity="0.18"/>
+  <rect x="134" y="222" width="216" height="16" rx="8" fill="#111827" fill-opacity="0.12"/>
+  <rect x="134" y="254" width="124" height="16" rx="8" fill="#111827" fill-opacity="0.1"/>
+  <path d="M226 328L260 276L318 308L283 364H240L226 328Z" fill="#F59E0B"/>
+  <path d="M238 286L278 356" stroke="#111827" stroke-width="10" stroke-linecap="round"/>
+  <path d="M278 286L238 356" stroke="#111827" stroke-width="10" stroke-linecap="round"/>
+</svg>
