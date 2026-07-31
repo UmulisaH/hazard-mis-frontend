@@ -84,7 +84,11 @@ apiClient.interceptors.response.use(
         toast.error(
           errorToastMessage(normalizedError.status, normalizedError.message),
         );
-      } else if (normalizedError.status !== 0 && !normalizedError.fieldErrors) {
+      } else if (
+        normalizedError.status !== 0 &&
+        normalizedError.status !== 401 &&
+        !normalizedError.fieldErrors
+      ) {
         toast.error(normalizedError.message);
       }
     }

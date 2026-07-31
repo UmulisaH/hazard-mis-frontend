@@ -17,6 +17,7 @@ type RegisterField = keyof RegisterEmployeeRequest;
 interface DepartmentOption {
   id: string;
   name: string;
+  institutionId?: string;
 }
 
 interface InstitutionOption {
@@ -30,16 +31,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function asString(value: unknown, fallback = '') {
-  return typeof value === 'string' ? value : fallback;
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+
+  return fallback;
 }
 
-function normalizeInstitutions(data: unknown): InstitutionOption[] {
-  if (!Array.isArray(data)) {
+function normalizeList(data: unknown): Record<string, unknown>[] {
+  if (Array.isArray(data)) {
+    return data.filter(isRecord);
+  }
+
+  if (!isRecord(data)) {
     return [];
   }
 
-  return data.map((item) => {
-    const record = isRecord(item) ? item : {};
+  if (Array.isArray(data.items)) {
+    return data.items.filter(isRecord);
+  }
+
+  if (Array.isArray(data.data)) {
+    return data.data.filter(isRecord);
+  }
+
+  return [];
+}
+
+function normalizeInstitutions(data: unknown): InstitutionOption[] {
+  return normalizeList(data).map((record) => {
     const departments = Array.isArray(record.departments)
       ? record.departments
           .map((department) => {
@@ -47,6 +67,7 @@ function normalizeInstitutions(data: unknown): InstitutionOption[] {
             return {
               id: asString(departmentRecord.id),
               name: asString(departmentRecord.name),
+              institutionId: asString(record.id),
             };
           })
           .filter((department) => department.id.length > 0 && department.name.length > 0)
@@ -58,6 +79,28 @@ function normalizeInstitutions(data: unknown): InstitutionOption[] {
       departments,
     };
   });
+}
+
+function normalizeDepartments(data: unknown): DepartmentOption[] {
+  return normalizeList(data)
+    .map((record) => {
+      const institution = isRecord(record.institution)
+        ? record.institution
+        : null;
+
+      return {
+        id: asString(record.id),
+        name: asString(record.name),
+        institutionId:
+          asString(record.institutionId) || asString(institution?.id),
+      };
+    })
+    .filter(
+      (department) =>
+        department.id.length > 0 &&
+        department.name.length > 0 &&
+        Boolean(department.institutionId),
+    );
 }
 
 function getFieldMessage(
@@ -114,6 +157,7 @@ export default function RegisterPage() {
   const [institutionId, setInstitutionId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [institutions, setInstitutions] = useState<InstitutionOption[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [institutionsLoading, setInstitutionsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldError, setFieldError] = useState<NormalizedApiError | null>(null);
@@ -131,9 +175,20 @@ export default function RegisterPage() {
       setInstitutionsLoading(true);
 
       try {
-        const response = await apiClient.get<unknown>('/institutions');
+        const [institutionsResult, departmentsResult] =
+          await Promise.allSettled([
+            apiClient.get<unknown>('/institutions'),
+            apiClient.get<unknown>('/departments'),
+          ]);
+
         if (active) {
-          setInstitutions(normalizeInstitutions(response.data));
+          if (institutionsResult.status === 'fulfilled') {
+            setInstitutions(normalizeInstitutions(institutionsResult.value.data));
+          }
+
+          if (departmentsResult.status === 'fulfilled') {
+            setDepartments(normalizeDepartments(departmentsResult.value.data));
+          }
         }
       } catch {
         if (active) {
@@ -158,7 +213,27 @@ export default function RegisterPage() {
     [institutionId, institutions],
   );
 
-  const selectedDepartments = selectedInstitution?.departments ?? [];
+  const selectedDepartments = useMemo(() => {
+    if (!selectedInstitution) {
+      return [];
+    }
+
+    const combined = [
+      ...selectedInstitution.departments,
+      ...departments.filter(
+        (department) => department.institutionId === selectedInstitution.id,
+      ),
+    ];
+    const unique = new Map<string, DepartmentOption>();
+
+    for (const department of combined) {
+      if (department.id && department.name) {
+        unique.set(department.id, department);
+      }
+    }
+
+    return [...unique.values()];
+  }, [departments, selectedInstitution]);
 
   const canSubmit = useMemo(
     () =>
