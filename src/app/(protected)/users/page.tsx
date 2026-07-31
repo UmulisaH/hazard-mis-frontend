@@ -54,7 +54,10 @@ function normalizeEmployee(raw: unknown): EmployeeRow {
     jobTitle: readString(record.jobTitle, ['jobTitle', 'job_title', 'title']),
     department:
       readString(record.department, ['name', 'departmentName']) ||
-      readString(record.departmentName, ['departmentName', 'department_name']) ||
+      readString(record.departmentName, [
+        'departmentName',
+        'department_name',
+      ]) ||
       readString(department.name, ['name']),
     role:
       role === 'admin' ||
@@ -138,46 +141,67 @@ export default function UsersPage() {
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-6 py-4 font-semibold">Employee</th>
-                  <th className="px-6 py-4 font-semibold">Department</th>
                   <th className="px-6 py-4 font-semibold">Role</th>
                   <th className="px-6 py-4 font-semibold">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/10 bg-white">
                 {loading ? (
-                  <tr><td colSpan={4} className="px-6 py-8 text-sm text-slate-500">Loading employees...</td></tr>
-                ) : employees.length === 0 ? (
-                  <tr><td colSpan={4} className="px-6 py-8 text-sm text-slate-500">No users were returned by the API.</td></tr>
-                ) : employees.map((employee) => (
-                  <tr key={employee.id} className="align-top">
-                    <td className="px-6 py-5">
-                      <p className="font-semibold text-slate-950">{employee.fullName}</p>
-                      <p className="text-slate-600">{employee.email}</p>
-                      <p className="text-slate-500">{employee.jobTitle}</p>
-                    </td>
-                    <td className="px-6 py-5 text-slate-700">{employee.department || 'Unavailable'}</td>
-                    <td className="px-6 py-5">
-                      <select
-                        value={employee.role}
-                        disabled={Boolean(pending[employee.id])}
-                        onChange={(event) => void updateRole(employee.id, event.target.value as AppRole)}
-                        aria-label={`Role for ${employee.fullName}`}
-                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="manager">Manager</option>
-                        <option value="safety_officer">Safety officer</option>
-                        <option value="reporter">Reporter</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                        {pending[employee.id] ? 'Updating...' : 'Ready'}
-                      </p>
-                      <FieldError message={rowErrors[employee.id]} />
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-6 py-8 text-sm text-slate-500"
+                    >
+                      Loading employees...
                     </td>
                   </tr>
-                ))}
+                ) : employees.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-6 py-8 text-sm text-slate-500"
+                    >
+                      No users were returned by the API.
+                    </td>
+                  </tr>
+                ) : (
+                  employees.map((employee) => (
+                    <tr key={employee.id} className="align-top">
+                      <td className="px-6 py-5">
+                        <p className="font-semibold text-slate-950">
+                          {employee.fullName}
+                        </p>
+                        <p className="text-slate-600">{employee.email}</p>
+                        <p className="text-slate-500">{employee.jobTitle}</p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <select
+                          value={employee.role}
+                          disabled={Boolean(pending[employee.id])}
+                          onChange={(event) =>
+                            void updateRole(
+                              employee.id,
+                              event.target.value as AppRole,
+                            )
+                          }
+                          aria-label={`Role for ${employee.fullName}`}
+                          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="manager">Manager</option>
+                          <option value="safety_officer">Safety officer</option>
+                          <option value="reporter">Reporter</option>
+                        </select>
+                      </td>
+                      <td className="px-6 py-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          {pending[employee.id] ? 'Updating...' : 'Ready'}
+                        </p>
+                        <FieldError message={rowErrors[employee.id]} />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
