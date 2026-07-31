@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   Bar,
@@ -21,6 +21,7 @@ import {
 
 import { RouteShell } from '@/components/layout/route-shell';
 import { useHazardWorkflow } from '@/components/hazards/hazard-workflow-provider';
+import type { NormalizedApiError } from '@/lib/api/types';
 import { useAuth } from '@/lib/auth/auth-context';
 import type { AppRole } from '@/lib/auth/types';
 import type { HazardReportRecord } from '@/lib/hazards/types';
@@ -81,8 +82,36 @@ function formatMonthLabel(value: string) {
 
 export default function DashboardPage() {
   const { role, currentUser } = useAuth();
-  const { reports } = useHazardWorkflow();
+  const { reports, fetchHazardReports } = useHazardWorkflow();
+  const [isLoadingReports, setIsLoadingReports] = useState(true);
+  const [reportsLoadError, setReportsLoadError] = useState<string | null>(null);
   const summary = role ? ROLE_SUMMARIES[role] : null;
+
+  useEffect(() => {
+    let active = true;
+
+    void fetchHazardReports()
+      .catch((error: unknown) => {
+        if (!active) {
+          return;
+        }
+
+        const normalizedError = error as Partial<NormalizedApiError>;
+        setReportsLoadError(
+          normalizedError.message ||
+            'We could not load dashboard report data. Please try again.',
+        );
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingReports(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [fetchHazardReports]);
 
   const metrics = useMemo(() => {
     const total = reports.length;
@@ -106,26 +135,28 @@ export default function DashboardPage() {
     return [
       {
         label: 'Total reports',
-        value: String(total),
-        hint: 'Tracked in client-side workflow state',
+        value: isLoadingReports ? '—' : String(total),
+        hint: 'Reports visible to your role',
       },
       {
         label: 'Open reports',
-        value: String(open),
+        value: isLoadingReports ? '—' : String(open),
         hint: 'Awaiting investigation or closure',
       },
       {
         label: 'Closed reports',
-        value: String(closed),
+        value: isLoadingReports ? '—' : String(closed),
         hint: 'Completed lifecycle cases',
       },
       {
         label: 'Critical risk',
-        value: String(critical),
-        hint: `Average severity ${averageSeverity}/4`,
+        value: isLoadingReports ? '—' : String(critical),
+        hint: isLoadingReports
+          ? 'Loading report data'
+          : `Average severity ${averageSeverity}/4`,
       },
     ];
-  }, [reports]);
+  }, [isLoadingReports, reports]);
 
   const categoryData = useMemo(() => {
     const counts = new Map<string, number>();
@@ -272,6 +303,13 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {reportsLoadError ? (
+        <section className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-950">
+          <p className="font-semibold">Dashboard data is unavailable</p>
+          <p className="mt-1 leading-6">{reportsLoadError}</p>
+        </section>
+      ) : null}
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (

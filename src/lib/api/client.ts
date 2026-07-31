@@ -68,13 +68,14 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const normalizedError = normalizeApiError(error);
+    const hasAccessToken = Boolean(readAccessToken());
     const shouldToastInlineFallback =
       (normalizedError.status === 400 || normalizedError.status === 409) &&
       !normalizedError.fieldErrors;
 
     if (typeof window !== 'undefined') {
       if (
-        normalizedError.status === 401 ||
+        (normalizedError.status === 401 && hasAccessToken) ||
         normalizedError.status === 403 ||
         normalizedError.status === 404 ||
         normalizedError.status === 500 ||
@@ -88,7 +89,10 @@ apiClient.interceptors.response.use(
       }
     }
 
-    if (shouldForceLogoutOnError(error)) {
+    // A 401 from a public page (for example, registration loading reference
+    // data after logout) is not an expired session. Only redirect when there
+    // is an access token that can actually be invalidated.
+    if (shouldForceLogoutOnError(error) && hasAccessToken) {
       clearAuthStorage();
       redirectToLogin('session-expired');
     }

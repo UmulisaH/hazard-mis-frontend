@@ -41,6 +41,7 @@ type HazardWorkflowContextValue = {
   reports: HazardReportRecord[];
   getReportById: (id: string) => HazardReportRecord | null;
   replaceReports: (nextReports: HazardReportRecord[]) => void;
+  fetchHazardReports: () => Promise<HazardReportRecord[]>;
   fetchHazardReport: (id: string) => Promise<HazardReportRecord>;
   createHazardReport: (
     payload: CreateHazardReportRequest,
@@ -85,55 +86,6 @@ type HazardReportsAction =
 const HazardWorkflowContext =
   createContext<HazardWorkflowContextValue | null>(null);
 
-const INITIAL_HAZARD_REPORTS: HazardReportRecord[] = [
-  {
-    id: 'haz-1001',
-    title: 'Spilled oil near loading bay',
-    summary:
-      'Small oil spill was observed near the loading bay after a delivery truck left the site.',
-    location: 'Loading Bay 2',
-    createdById: 'demo-reporter-1',
-    hazardCategory: 'Slip/Trip/Fall',
-    severityLevel: 'High',
-    aiPriority: null,
-    aiConfidence: null,
-    recurrenceCount: 0,
-    status: 'Reported',
-    assignedOfficerId: 'demo-safety-officer-1',
-    investigationNotes: null,
-    investigationDetail: null,
-    correctiveActions: [],
-    closureRecord: null,
-    closureNote: null,
-    closedAt: null,
-    createdAt: '2026-06-28T10:15:00.000Z',
-    updatedAt: '2026-06-28T12:20:00.000Z',
-  },
-  {
-    id: 'haz-1002',
-    title: 'Exposed cable in maintenance corridor',
-    summary:
-      'A loose cable was reported in the maintenance corridor adjacent to the equipment room.',
-    location: 'Maintenance Corridor',
-    createdById: 'demo-reporter-2',
-    hazardCategory: 'Electrical',
-    severityLevel: 'Medium',
-    aiPriority: null,
-    aiConfidence: null,
-    recurrenceCount: 0,
-    status: 'Reported',
-    assignedOfficerId: null,
-    investigationNotes: null,
-    investigationDetail: null,
-    correctiveActions: [],
-    closureRecord: null,
-    closureNote: null,
-    closedAt: null,
-    createdAt: '2026-06-30T08:30:00.000Z',
-    updatedAt: '2026-06-30T08:30:00.000Z',
-  },
-];
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -152,6 +104,30 @@ function unwrapHazardReportResponse(value: unknown) {
   }
 
   return value;
+}
+
+function readHazardReportList(value: unknown): unknown[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  if (Array.isArray(value.items)) {
+    return value.items;
+  }
+
+  if (Array.isArray(value.reports)) {
+    return value.reports;
+  }
+
+  if (value.data !== value) {
+    return readHazardReportList(value.data);
+  }
+
+  return [];
 }
 
 function readStringValue(value: unknown, keys: string[] = []) {
@@ -626,7 +602,7 @@ export function HazardWorkflowProvider({
   const { currentUser } = useAuth();
   const [reports, dispatch] = useReducer(
     hazardReportsReducer,
-    INITIAL_HAZARD_REPORTS,
+    [],
   );
   const reportsRef = useRef(reports);
 
@@ -641,6 +617,27 @@ export function HazardWorkflowProvider({
 
   const replaceReports = useCallback((nextReports: HazardReportRecord[]) => {
     dispatch({ type: 'reports/replace', reports: nextReports });
+  }, []);
+
+  const fetchHazardReports = useCallback(async () => {
+    const response = await apiClient.get<unknown>('/hazard-reports', {
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    });
+    const nextReports = readHazardReportList(response.data).map((report) =>
+      normalizeHazardReport(report, {
+        title: '',
+        summary: '',
+        location: '',
+        hazardCategory: 'Machinery',
+        severityLevel: 'Low',
+      }),
+    );
+
+    dispatch({ type: 'reports/replace', reports: nextReports });
+    return nextReports;
   }, []);
 
   const fetchHazardReport = useCallback(async (id: string) => {
@@ -968,6 +965,7 @@ export function HazardWorkflowProvider({
         reports,
         getReportById,
         replaceReports,
+        fetchHazardReports,
         fetchHazardReport,
         createHazardReport,
         assignHazardReport,
