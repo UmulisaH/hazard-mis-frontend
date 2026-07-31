@@ -32,17 +32,22 @@ const ROLE_SUMMARIES: Record<
     description: string;
   }
 > = {
-  Reporter: {
+  reporter: {
     title: 'Reporter command view',
     description:
       'Capture hazards quickly, watch their status progress, and keep the safety team informed.',
   },
-  'Safety Officer': {
+  safety_officer: {
     title: 'Safety operations view',
     description:
       'Prioritize assignments, investigations, corrective actions, and closure with one glance.',
   },
-  Admin: {
+  manager: {
+    title: 'Manager operations view',
+    description:
+      'Manage hazard assignments, investigations, corrective actions, and closure across the organization.',
+  },
+  admin: {
     title: 'Administration view',
     description:
       'Monitor the entire risk surface, keep reference data clean, and oversee account access.',
@@ -218,7 +223,8 @@ export default function DashboardPage() {
               in. Use this workspace to track the current safety state without
               switching between screens.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
+            {role === 'reporter' ? (
+              <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="/hazards/new"
                 className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
@@ -233,7 +239,17 @@ export default function DashboardPage() {
               >
                 Review workflow
               </Link>
-            </div>
+              </div>
+            ) : (
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href="/hazards"
+                  className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+                >
+                  Review workflow
+                </Link>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 self-end">

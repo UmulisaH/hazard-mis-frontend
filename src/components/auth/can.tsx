@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import type { AppRole } from '@/lib/auth/types';
+import { hasAnyRole } from '@/lib/auth/roles';
 
 export function Can({
   anyOf,
@@ -20,7 +21,7 @@ export function Can({
     return fallback;
   }
 
-  if (role === null || !anyOf.includes(role)) {
+  if (!hasAnyRole(role, ...anyOf)) {
     return fallback;
   }
 

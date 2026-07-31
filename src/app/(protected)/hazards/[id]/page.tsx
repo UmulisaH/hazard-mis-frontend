@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 
 import { FieldError, FormAlert } from '@/components/auth/form-feedback';
@@ -11,7 +11,13 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { useHazardWorkflow } from '@/components/hazards/hazard-workflow-provider';
 import type { NormalizedApiError } from '@/lib/api/types';
 import { getTodayDateInputValue } from '@/lib/hazards/date-input';
-import type { CorrectiveActionRecord, HazardReportRecord } from '@/lib/hazards/types';
+import type {
+  CorrectiveActionRecord,
+  HazardReportRecord,
+} from '@/lib/hazards/types';
+import { getHazardCreatorId } from '@/lib/hazards/types';
+import { ForbiddenState } from '@/components/auth/forbidden-state';
+import { AiPriorityBadge } from '@/components/hazards/ai-priority-badge';
 
 function getFieldError(error: NormalizedApiError | null, field: string) {
   return error?.fieldErrors?.[field]?.[0];
@@ -511,10 +517,8 @@ function LifecycleDetails({
     ? report.correctiveActions
     : [];
   const closureRecord = report.closureRecord;
-  const [addingInvestigation, setAddingInvestigation] =
-    useState(false);
-  const [addingCorrectiveAction, setAddingCorrectiveAction] =
-    useState(false);
+  const [addingInvestigation, setAddingInvestigation] = useState(false);
+  const [addingCorrectiveAction, setAddingCorrectiveAction] = useState(false);
   const [editingAction, setEditingAction] =
     useState<CorrectiveActionRecord | null>(null);
 
@@ -571,7 +575,9 @@ function LifecycleDetails({
                       </span>
                     ))
                   ) : (
-                    <span className="text-sm text-slate-500">None recorded</span>
+                    <span className="text-sm text-slate-500">
+                      None recorded
+                    </span>
                   )}
                 </dd>
               </div>
@@ -678,14 +684,6 @@ function LifecycleDetails({
                         {formatDate(action.createdAt)}
                       </dd>
                     </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                        Action ID
-                      </dt>
-                      <dd className="mt-1 text-sm text-slate-700">
-                        {action.id}
-                      </dd>
-                    </div>
                   </dl>
                   {canEditCorrectiveActions ? (
                     <div className="mt-4 flex justify-end">
@@ -728,7 +726,7 @@ function LifecycleDetails({
                   Closure date
                 </dt>
                 <dd className="mt-2 text-sm font-semibold text-slate-950">
-                  N/A
+                  {formatDate(closureRecord.closureDate)}
                 </dd>
               </div>
               <div className="rounded-2xl bg-slate-50 px-4 py-3">
@@ -787,23 +785,85 @@ function LifecycleDetails({
 export default function HazardDetailPage() {
   const params = useParams<{ id: string }>();
   const { role, currentUser } = useAuth();
-  const { getReportById } = useHazardWorkflow();
+  const { getReportById, fetchHazardReport } = useHazardWorkflow();
   const reportId = params.id;
   const report = getReportById(reportId);
+  const [loadedReportId, setLoadedReportId] = useState<string | null>(null);
+  const [reportLoadError, setReportLoadError] = useState<string | null>(null);
+  const isLoadingReport = !report && loadedReportId !== reportId;
+
+  useEffect(() => {
+    if (report) {
+      return;
+    }
+
+    let isActive = true;
+
+    void fetchHazardReport(reportId)
+      .then(() => {
+        if (isActive) {
+          setReportLoadError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        const normalizedError = error as Partial<NormalizedApiError>;
+        setReportLoadError(
+          normalizedError.message ||
+            'We could not load this hazard report. Please try again.',
+        );
+      })
+      .finally(() => {
+        if (isActive) {
+          setLoadedReportId(reportId);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [fetchHazardReport, report, reportId]);
   const currentUserId = String(currentUser?.id ?? '').trim();
   const assignedOfficerId = String(
     report?.assignedOfficer?.id ?? report?.assignedOfficerId ?? '',
   ).trim();
   const isClosed = report?.status === 'Closed';
-  const canEditCorrectiveActions =
-    role === 'Safety Officer' &&
-    Boolean(currentUser?.isSafetyOfficer) &&
+  const isAssignedSafetyOfficer =
+    role === 'safety_officer' &&
     currentUserId.length > 0 &&
-    currentUserId === assignedOfficerId &&
-    !isClosed;
-  const canAddInvestigation = canEditCorrectiveActions;
+    currentUserId === assignedOfficerId;
+  const canEditCorrectiveActions =
+    (role === 'manager' || isAssignedSafetyOfficer) && !isClosed;
+  const canAddInvestigation =
+    (role === 'manager' || isAssignedSafetyOfficer) && !isClosed;
   const canAddCorrectiveAction =
     canEditCorrectiveActions && Boolean(report?.investigationDetail);
+
+  const isAssignedToCurrentOfficer =
+    String(
+      report?.assignedOfficer?.id ?? report?.assignedOfficerId ?? '',
+    ).trim() === currentUserId;
+  const isCreatedByCurrentReporter =
+    getHazardCreatorId(report ?? {}) === currentUserId;
+
+  if (
+    report &&
+    ((role === 'safety_officer' && !isAssignedToCurrentOfficer) ||
+      (role === 'reporter' && !isCreatedByCurrentReporter))
+  ) {
+    return (
+      <RouteShell
+        eyebrow="Hazard detail"
+        title="Report unavailable"
+        description="This report is outside the current role's scope."
+      >
+        <ForbiddenState description="You can only view reports assigned to you or submitted by you." />
+      </RouteShell>
+    );
+  }
 
   return (
     <RouteShell
@@ -843,14 +903,6 @@ export default function HazardDetailPage() {
               <div className="grid gap-3 self-end">
                 <div className="rounded-3xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-300">
-                    Record ID
-                  </p>
-                  <p className="mt-2 break-words text-sm font-medium text-white">
-                    {report.id}
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-300">
                     Updated
                   </p>
                   <p className="mt-2 text-sm font-medium text-white">
@@ -876,6 +928,29 @@ export default function HazardDetailPage() {
                   </dt>
                   <dd className="mt-2 text-sm font-semibold text-slate-950">
                     {report.hazardCategory}
+                  </dd>
+                </div>
+                <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 sm:col-span-2">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
+                    AI-generated priority recommendation
+                  </dt>
+                  <dd className="mt-2">
+                    <AiPriorityBadge
+                      priority={report.aiPriority}
+                      confidence={report.aiConfidence}
+                    />
+                  </dd>
+                  <p className="mt-2 text-xs leading-5 text-sky-900">
+                    This is an AI recommendation, not a confirmed safety
+                    classification.
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Recurrence count
+                  </dt>
+                  <dd className="mt-2 text-sm font-semibold text-slate-950">
+                    {report.recurrenceCount}
                   </dd>
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3">
@@ -936,6 +1011,30 @@ export default function HazardDetailPage() {
             <HazardLifecycleActions report={report} />
           </div>
         </>
+      ) : isLoadingReport ? (
+        <section className="rounded-3xl border border-black/10 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
+            Loading hazard record
+          </p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Fetching the latest report details.
+          </p>
+        </section>
+      ) : reportLoadError ? (
+        <section className="rounded-3xl border border-rose-200 bg-rose-50 p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-rose-700">
+            Unable to load hazard record
+          </p>
+          <p className="mt-3 text-sm leading-6 text-rose-950">
+            {reportLoadError}
+          </p>
+          <Link
+            href="/hazards"
+            className="mt-5 inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            Back to reports
+          </Link>
+        </section>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
           <section className="rounded-3xl border border-black/10 bg-white p-6">
@@ -951,15 +1050,19 @@ export default function HazardDetailPage() {
             </p>
           </section>
           <aside className="grid gap-4">
-            <div className="rounded-3xl border border-black/10 bg-slate-50 p-6 text-sm leading-6 text-slate-700">
-              Create a report to populate this view.
-            </div>
-            <Link
-              href="/hazards/new"
-              className="rounded-full bg-slate-950 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              Create a report
-            </Link>
+            {role === 'reporter' ? (
+              <>
+                <div className="rounded-3xl border border-black/10 bg-slate-50 p-6 text-sm leading-6 text-slate-700">
+                  Create a report to populate this view.
+                </div>
+                <Link
+                  href="/hazards/new"
+                  className="rounded-full bg-slate-950 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Create a report
+                </Link>
+              </>
+            ) : null}
           </aside>
         </div>
       )}

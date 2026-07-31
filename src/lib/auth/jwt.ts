@@ -23,8 +23,7 @@ export function decodeJwtPayload(token: string): DecodedJwtPayload | null {
     if (
       typeof payload.sub !== 'string' ||
       typeof payload.email !== 'string' ||
-      typeof payload.is_safety_officer !== 'boolean' ||
-      typeof payload.is_admin !== 'boolean' ||
+      !isAppRole(payload.role) ||
       typeof payload.exp !== 'number' ||
       typeof payload.iat !== 'number'
     ) {
@@ -34,8 +33,7 @@ export function decodeJwtPayload(token: string): DecodedJwtPayload | null {
     return {
       sub: payload.sub,
       email: payload.email,
-      is_safety_officer: payload.is_safety_officer,
-      is_admin: payload.is_admin,
+      role: payload.role,
       exp: payload.exp,
       iat: payload.iat,
     };
@@ -51,16 +49,11 @@ export function isJwtExpired(
   return payload.exp <= now;
 }
 
-export function deriveAppRole(
-  payload: Pick<DecodedJwtPayload, 'is_admin' | 'is_safety_officer'>,
-): AppRole {
-  if (payload.is_admin) {
-    return 'Admin';
-  }
-
-  if (payload.is_safety_officer) {
-    return 'Safety Officer';
-  }
-
-  return 'Reporter';
+export function isAppRole(value: unknown): value is AppRole {
+  return (
+    value === 'admin' ||
+    value === 'manager' ||
+    value === 'safety_officer' ||
+    value === 'reporter'
+  );
 }

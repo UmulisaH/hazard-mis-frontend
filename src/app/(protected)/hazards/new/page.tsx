@@ -8,11 +8,11 @@ import {
   FieldError,
   FormAlert,
 } from '../../../../components/auth/form-feedback';
+import { RequireRole } from '@/components/auth/require-role';
 import { RouteShell } from '@/components/layout/route-shell';
 import { useHazardWorkflow } from '@/components/hazards/hazard-workflow-provider';
 import { apiClient } from '@/lib/api/client';
 import type { NormalizedApiError } from '@/lib/api/types';
-import { useAuth } from '@/lib/auth/auth-context';
 import type {
   CreateHazardReportDraft,
   HazardCategoryOption,
@@ -80,7 +80,6 @@ function getFieldError(error: NormalizedApiError | null, field: string) {
 
 export default function NewHazardPage() {
   const router = useRouter();
-  const { role } = useAuth();
   const { createHazardReport } = useHazardWorkflow();
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
@@ -101,12 +100,6 @@ export default function NewHazardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<NormalizedApiError | null>(null);
-
-  useEffect(() => {
-    if (role === 'Safety Officer') {
-      router.replace('/hazards');
-    }
-  }, [role, router]);
 
   const selectedHazardCategory = useMemo(
     () =>
@@ -256,16 +249,13 @@ export default function NewHazardPage() {
     }
   }
 
-  if (role === 'Safety Officer') {
-    return null;
-  }
-
   return (
-    <RouteShell
-      eyebrow="Hazard submission"
-      title="Create a new hazard report"
-      description="Capture the essentials, choose the live hazard reference data from the backend, and send the report for immediate follow-up."
-    >
+    <RequireRole allowedRoles={['reporter']}>
+      <RouteShell
+        eyebrow="Hazard submission"
+        title="Create a new hazard report"
+        description="Capture the essentials, choose the live hazard reference data from the backend, and send the report for immediate follow-up."
+      >
       <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <form
           className="rounded-3xl border border-black/10 bg-white p-6 shadow-[0_20px_70px_rgba(15,23,42,0.05)]"
@@ -432,6 +422,7 @@ export default function NewHazardPage() {
           </div>
         </aside>
       </div>
-    </RouteShell>
+      </RouteShell>
+    </RequireRole>
   );
 }

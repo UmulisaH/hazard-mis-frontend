@@ -7,6 +7,7 @@ import {
   useState,
   type FormEvent,
 } from 'react';
+import { usePathname } from 'next/navigation';
 
 import { RequireRole } from '@/components/auth/require-role';
 import { FieldError, FormAlert } from '@/components/auth/form-feedback';
@@ -267,6 +268,12 @@ function ListLoadingRow({
 }
 
 export default function OrganizationPage() {
+  const pathname = usePathname();
+  const section = pathname.endsWith('/institutions')
+    ? 'institutions'
+    : pathname.endsWith('/departments')
+      ? 'departments'
+      : 'overview';
   const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
   const [institutionsLoading, setInstitutionsLoading] = useState(true);
@@ -547,7 +554,7 @@ export default function OrganizationPage() {
   }
 
   return (
-    <RequireRole allowedRoles={['Admin']}>
+    <RequireRole allowedRoles={['admin']}>
       <RouteShell
         eyebrow="Organization"
         title="Institution and department management"
@@ -572,6 +579,7 @@ export default function OrganizationPage() {
           </div>
         </div>
 
+        {section !== 'departments' ? (
         <SectionCard
           title="Institutions"
           description="Add, edit, and delete institutions."
@@ -650,7 +658,9 @@ export default function OrganizationPage() {
             </table>
           </div>
         </SectionCard>
+        ) : null}
 
+        {section !== 'institutions' ? (
         <SectionCard
           title="Departments"
           description="Add, edit, and delete departments."
@@ -725,6 +735,7 @@ export default function OrganizationPage() {
             </table>
           </div>
         </SectionCard>
+        ) : null}
       </RouteShell>
 
       {institutionModal ? (

@@ -3,14 +3,9 @@ import type { HazardCategoryName, SeverityLevelName } from '@/lib/ai/types';
 export type HazardPriority = 'Low' | 'Medium' | 'High';
 
 export type HazardWorkflowStatus =
-  | 'Draft'
-  | 'Submitted'
-  | 'Under Review'
-  | 'Assigned'
+  | 'Reported'
   | 'Investigating'
   | 'Corrective Action'
-  | 'Ready for Closure'
-  | 'Resolved'
   | 'Closed';
 
 export interface HazardCategoryOption {
@@ -31,8 +26,7 @@ export interface HazardUserOption {
   id: string;
   fullName: string;
   jobTitle: string;
-  isSafetyOfficer: boolean;
-  isAdmin: boolean;
+  role: 'admin' | 'manager' | 'safety_officer' | 'reporter';
 }
 
 export interface InvestigationDetail {
@@ -68,6 +62,9 @@ export interface HazardReport {
   createdById: string;
   hazardCategory: HazardCategoryName;
   severityLevel: SeverityLevelName;
+  aiPriority: HazardPriority | null;
+  aiConfidence: number | string | null;
+  recurrenceCount: number;
   status: HazardWorkflowStatus;
   assignedOfficerId: string | null;
   assignedOfficer?: {
@@ -100,12 +97,39 @@ export interface CreateHazardReportRequest {
   description: string;
   hazardCategoryId: string;
   severityLevelId: string;
-  aiPriority?: HazardPriority;
-  aiConfidence?: number;
+}
+
+export function normalizeAiConfidence(value: unknown): number | string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value;
+  }
+
+  return null;
+}
+
+export function formatAiConfidence(value: number | string | null) {
+  if (value === null || value === '') {
+    return null;
+  }
+
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+
+  return `${Math.round(numericValue <= 1 ? numericValue * 100 : numericValue)}%`;
 }
 
 export interface AssignHazardReportRequest {
   assignedOfficerId: string;
+}
+
+export interface UpdateHazardReportStatusRequest {
+  status: Extract<HazardWorkflowStatus, 'Reported' | 'Investigating' | 'Corrective Action'>;
 }
 
 export interface InvestigateHazardReportRequest {

@@ -35,22 +35,6 @@ function readStringValue(value: unknown, keys: string[] = []) {
   return '';
 }
 
-function asBoolean(value: unknown) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'number') {
-    return value !== 0;
-  }
-
-  if (typeof value === 'string') {
-    return value === 'true' || value === '1';
-  }
-
-  return false;
-}
-
 function normalizeList<T>(data: unknown, mapItem: (item: unknown) => T): T[] {
   if (Array.isArray(data)) {
     return data.map(mapItem);
@@ -74,10 +58,13 @@ function normalizeSafetyOfficer(raw: unknown): HazardUserOption {
     jobTitle:
       readStringValue(record.jobTitle, ['jobTitle', 'job_title', 'title']) ||
       asString(record.jobTitle),
-    isSafetyOfficer: asBoolean(
-      record.isSafetyOfficer ?? record.is_safety_officer,
-    ),
-    isAdmin: asBoolean(record.isAdmin ?? record.is_admin),
+    role:
+      record.role === 'admin' ||
+      record.role === 'manager' ||
+      record.role === 'safety_officer' ||
+      record.role === 'reporter'
+        ? record.role
+        : 'reporter',
   };
 }
 
@@ -99,7 +86,7 @@ export function useSafetyOfficers(enabled = true) {
 
       try {
         const response = await apiClient.get<unknown>(
-          '/users',
+          '/users?role=safety_officer',
         );
 
         if (!active) {
@@ -108,7 +95,7 @@ export function useSafetyOfficers(enabled = true) {
 
         setOfficers(
           normalizeList(response.data, normalizeSafetyOfficer).filter(
-            (officer) => officer.isSafetyOfficer && !officer.isAdmin,
+            (officer) => officer.role === 'safety_officer',
           ),
         );
       } catch (error) {

@@ -41,6 +41,31 @@ const SEVERITY_LEVEL_OPTIONS: SeverityLevelName[] = [
   'Critical',
 ];
 
+function formatConfidence(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+
+  return `${Math.round(numericValue <= 1 ? numericValue * 100 : numericValue)}%`;
+}
+
+function predictionErrorMessage(error: NormalizedApiError) {
+  if (error.status === 403) {
+    return 'You do not have permission to run AI predictions.';
+  }
+
+  if (error.status === 500) {
+    return 'The AI prediction service is unavailable. Please try again later.';
+  }
+
+  return error.message;
+}
+
 function formatIsoDate(value: string | null) {
   if (!value) {
     return 'Unavailable';
@@ -149,7 +174,11 @@ export default function AiPage() {
       );
       setPredictResult(response.data);
     } catch (error) {
-      setPredictError(error as NormalizedApiError);
+      const normalizedError = error as NormalizedApiError;
+      setPredictError({
+        ...normalizedError,
+        message: predictionErrorMessage(normalizedError),
+      });
     } finally {
       setPredictLoading(false);
     }
@@ -177,15 +206,24 @@ export default function AiPage() {
       );
     } catch (error) {
       const normalizedError = error as NormalizedApiError;
-      setRetrainError(normalizedError.message);
+      setRetrainError(
+        normalizedError.status === 403
+          ? 'Only administrators can retrain the AI model.'
+          : normalizedError.status === 500
+            ? 'The AI model could not be retrained. Please try again later.'
+            : normalizedError.message,
+      );
     } finally {
       setRetrainLoading(false);
     }
   }
 
   const canPredict = useMemo(
-    () => !predictLoading && !isRecurrenceOutOfRange,
-    [predictLoading, isRecurrenceOutOfRange],
+    () =>
+      !predictLoading &&
+      !isRecurrenceOutOfRange &&
+      status?.loaded !== false,
+    [isRecurrenceOutOfRange, predictLoading, status?.loaded],
   );
 
   return (
@@ -240,9 +278,17 @@ export default function AiPage() {
               </dd>
             </div>
           </dl>
+          {!statusLoading && status && !status.loaded ? (
+            <div className="mt-3">
+              <FormAlert tone="info">
+                The AI model is currently unavailable. Predictions cannot run
+                until an administrator loads or retrains the model.
+              </FormAlert>
+            </div>
+          ) : null}
         </div>
 
-        <Can anyOf={['Safety Officer', 'Admin']}>
+        <Can anyOf={['manager', 'safety_officer']}>
           <form
             className="rounded-3xl border border-black/10 bg-emerald-50 p-6"
             onSubmit={handlePredict}
@@ -328,7 +374,9 @@ export default function AiPage() {
                 <p>
                   Predicted priority: <strong>{predictResult.priority}</strong>
                 </p>
-                <p>Confidence: {predictResult.confidence}</p>
+                {formatConfidence(predictResult.confidence) ? (
+                  <p>Confidence: {formatConfidence(predictResult.confidence)}</p>
+                ) : null}
                 <p>Model version: {predictResult.modelVersion}</p>
               </div>
             ) : null}
@@ -343,7 +391,7 @@ export default function AiPage() {
           </form>
         </Can>
 
-        <Can anyOf={['Admin']}>
+        <Can anyOf={['admin']}>
           <div className="rounded-3xl border border-black/10 bg-amber-50 p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-amber-900">
               Admin controls

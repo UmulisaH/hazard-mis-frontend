@@ -24,7 +24,7 @@ export interface PredictionResponse {
 
 export interface ModelStatus {
   loaded: boolean;
-  version: string;
+  version: string | null;
   trainedAt: string | null;
   totalRecords: number;
 }

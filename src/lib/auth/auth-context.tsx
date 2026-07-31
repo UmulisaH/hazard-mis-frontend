@@ -13,7 +13,7 @@ import {
 
 import { apiClient } from '@/lib/api/client';
 import { clearAuthStorage, readAccessToken, writeAccessToken } from './session';
-import { decodeJwtPayload, deriveAppRole, isJwtExpired } from './jwt';
+import { decodeJwtPayload, isJwtExpired } from './jwt';
 import type {
   AppRole,
   AuthResponse,
@@ -63,7 +63,7 @@ function buildStateFromToken(
   return {
     token,
     decodedToken,
-    role: deriveAppRole(decodedToken),
+    role: decodedToken.role,
     profile,
     isAuthenticated: true,
     isBootstrapping: false,
@@ -135,7 +135,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
         setState({
           token,
           decodedToken,
-          role: deriveAppRole(decodedToken),
+          role: decodedToken.role,
           profile: null,
           isAuthenticated: true,
           isBootstrapping: true,
@@ -174,8 +174,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
       ? {
           id: state.decodedToken.sub,
           email: state.decodedToken.email,
-          isSafetyOfficer: state.decodedToken.is_safety_officer,
-          isAdmin: state.decodedToken.is_admin,
+          role: state.decodedToken.role,
         }
       : null;
 

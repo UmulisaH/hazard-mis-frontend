@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { RouteShell } from '@/components/layout/route-shell';
 import { useHazardWorkflow } from '@/components/hazards/hazard-workflow-provider';
@@ -10,7 +10,62 @@ import { apiClient } from '@/lib/api/client';
 import type { NormalizedApiError } from '@/lib/api/types';
 import { useAuth } from '@/lib/auth/auth-context';
 import type { HazardReportRecord } from '@/lib/hazards/types';
+import { normalizeAiConfidence } from '@/lib/hazards/types';
+import { AiPriorityBadge } from '@/components/hazards/ai-priority-badge';
 import { getHazardCreatorId } from '@/lib/hazards/types';
+import type {
+  HazardCategoryOption,
+  SeverityLevelOption,
+} from '@/lib/hazards/types';
+import {
+  EMPTY_HAZARD_REPORT_FILTERS,
+  buildHazardReportQuery,
+  type HazardReportFilters,
+} from '@/lib/hazards/filters';
+import type { HazardPriority, HazardWorkflowStatus } from '@/lib/hazards/types';
+
+interface FilterPersonOption {
+  id: string;
+  name: string;
+  role: string;
+  departmentId: string;
+  departmentName: string;
+}
+
+function normalizeLookupList<T>(data: unknown, map: (value: unknown) => T) {
+  const items = Array.isArray(data)
+    ? data
+    : isRecord(data) && Array.isArray(data.items)
+      ? data.items
+      : [];
+  return items.map(map);
+}
+
+function normalizeFilterPerson(value: unknown): FilterPersonOption {
+  const record = isRecord(value) ? value : {};
+  const department = isRecord(record.department) ? record.department : {};
+  const role = typeof record.role === 'string' ? record.role : '';
+  return {
+    id: readStringValue(record.id),
+    name:
+      readStringValue(record.fullName) ||
+      readStringValue(record.name) ||
+      readStringValue(record.email),
+    role,
+    departmentId:
+      readStringValue(record.departmentId) || readStringValue(department.id),
+    departmentName:
+      readStringValue(department.name) || readStringValue(record.departmentName),
+  };
+}
+
+const REPORT_STATUSES: HazardWorkflowStatus[] = [
+  'Reported',
+  'Investigating',
+  'Corrective Action',
+  'Closed',
+];
+const AI_PRIORITIES: HazardPriority[] = ['High', 'Medium', 'Low'];
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -412,11 +467,30 @@ function normalizeHazard(raw: unknown): HazardReportRecord {
         record.severityName ??
         severityValue,
     ),
-    status: firstString(
-      readStringValue(record.status),
-      readStringValue(record.workflowStatus),
-      readStringValue(record.reportStatus),
-    ) as HazardReportRecord['status'],
+    aiPriority:
+      record.aiPriority === 'Low' ||
+      record.aiPriority === 'Medium' ||
+      record.aiPriority === 'High'
+        ? record.aiPriority
+        : null,
+    aiConfidence: normalizeAiConfidence(record.aiConfidence),
+    recurrenceCount:
+      typeof record.recurrenceCount === 'number' &&
+      Number.isFinite(record.recurrenceCount)
+        ? record.recurrenceCount
+        : Number(record.recurrenceCount) || 0,
+    status: (() => {
+      const value = firstString(
+        readStringValue(record.status),
+        readStringValue(record.workflowStatus),
+        readStringValue(record.reportStatus),
+      );
+      return value === 'Investigating' ||
+        value === 'Corrective Action' ||
+        value === 'Closed'
+        ? value
+        : 'Reported';
+    })(),
     assignedOfficer:
       normalizeUserRelation(record.assignedOfficer) ??
       normalizeUserRelation(record.assignedTo) ??
@@ -456,10 +530,38 @@ function normalizeHazard(raw: unknown): HazardReportRecord {
 export default function HazardsPage() {
   const { role, currentUser } = useAuth();
   const { reports, replaceReports } = useHazardWorkflow();
-  const canResolveAssignees = role === 'Admin' || role === 'Safety Officer';
+  const canResolveAssignees = role === 'manager';
   const { officersById } = useSafetyOfficers(canResolveAssignees);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<HazardReportFilters>(
+    EMPTY_HAZARD_REPORT_FILTERS,
+  );
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [categories, setCategories] = useState<HazardCategoryOption[]>([]);
+  const [severityLevels, setSeverityLevels] = useState<SeverityLevelOption[]>(
+    [],
+  );
+  const [people, setPeople] = useState<FilterPersonOption[]>([]);
+
+  const departments = useMemo(() => {
+    const unique = new Map<string, string>();
+    for (const person of people) {
+      if (person.departmentId && person.departmentName) {
+        unique.set(person.departmentId, person.departmentName);
+      }
+    }
+    return [...unique.entries()].map(([id, name]) => ({ id, name }));
+  }, [people]);
+
+  const officers = useMemo(
+    () => people.filter((person) => person.role === 'safety_officer'),
+    [people],
+  );
+  const reporters = useMemo(
+    () => people.filter((person) => person.role === 'reporter'),
+    [people],
+  );
 
   const loadHazards = useCallback(async () => {
     setIsLoading(true);
@@ -467,13 +569,12 @@ export default function HazardsPage() {
 
     try {
       const response = await apiClient.get<unknown>('/hazard-reports', {
+        params: buildHazardReportQuery(filters),
         headers: {
           'Cache-Control': 'no-cache',
           Pragma: 'no-cache',
         },
       });
-
-      console.log('Raw Hazards:', response.data);
 
       const rawHazards = Array.isArray(response.data)
         ? response.data
@@ -489,38 +590,79 @@ export default function HazardsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [replaceReports]);
+  }, [filters, replaceReports]);
 
   useEffect(() => {
-    const initialLoadId = window.setTimeout(() => {
-      void loadHazards();
-    }, 0);
+    let active = true;
+    async function loadLookups() {
+      const lookupResults = await Promise.allSettled([
+        apiClient.get<unknown>('/hazard-categories'),
+        apiClient.get<unknown>('/severity-levels'),
+        role === 'admin' || role === 'manager'
+          ? apiClient.get<unknown>('/users')
+          : Promise.resolve(null),
+      ]);
 
-    const handleFocus = () => {
-      void loadHazards();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        void loadHazards();
+      if (!active) return;
+      if (lookupResults[0].status === 'fulfilled') {
+        setCategories(
+          normalizeLookupList(lookupResults[0].value.data, (value) => {
+            const record = isRecord(value) ? value : {};
+            return {
+              id: readStringValue(record.id),
+              name: readStringValue(record.name) as HazardCategoryOption['name'],
+              description: null,
+              parentId: null,
+            };
+          }),
+        );
       }
-    };
+      if (lookupResults[1].status === 'fulfilled') {
+        setSeverityLevels(
+          normalizeLookupList(lookupResults[1].value.data, (value) => {
+            const record = isRecord(value) ? value : {};
+            return {
+              id: readStringValue(record.id),
+              name: readStringValue(record.name) as SeverityLevelOption['name'],
+              weight: Number(record.weight) || 1,
+              description: null,
+            };
+          }),
+        );
+      }
+      if (lookupResults[2].status === 'fulfilled' && lookupResults[2].value) {
+        setPeople(normalizeLookupList(lookupResults[2].value.data, normalizeFilterPerson));
+      }
+    }
+    void loadLookups();
+    return () => { active = false; };
+  }, [role]);
 
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadHazards();
+    }, filters.search.trim() ? 350 : 0);
+    return () => window.clearTimeout(timer);
+  }, [filters.search, loadHazards]);
 
-    return () => {
-      window.clearTimeout(initialLoadId);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [loadHazards]);
+  function updateFilter<Key extends keyof HazardReportFilters>(
+    key: Key,
+    value: HazardReportFilters[Key],
+  ) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function resetFilters() {
+    setFilters({ ...EMPTY_HAZARD_REPORT_FILTERS });
+  }
+
+  const activeFilters = Object.entries(filters).filter(([, value]) => value);
 
   const currentUserId = String(currentUser?.id ?? '').trim();
 
   let visibleReports = reports;
 
-  if (role === 'Safety Officer') {
+  if (role === 'safety_officer') {
     visibleReports = currentUserId
       ? reports.filter(
           (report) =>
@@ -529,7 +671,7 @@ export default function HazardsPage() {
             ).trim() === currentUserId,
         )
       : [];
-  } else if (role !== 'Admin') {
+  } else if (role !== 'admin' && role !== 'manager') {
     visibleReports = currentUserId
       ? reports.filter(
           (report) =>
@@ -554,6 +696,40 @@ export default function HazardsPage() {
       title="Hazard reports"
       description="Browse the current hazard register."
     >
+      <section className="rounded-3xl border border-black/10 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">Filter reports</h2>
+            <p className="mt-1 text-sm text-slate-600">Refine the report list when needed.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setFiltersExpanded((current) => !current)}
+              aria-expanded={filtersExpanded}
+              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              {filtersExpanded ? 'Hide filters' : 'Show filters'}
+              {activeFilters.length > 0 ? ` (${activeFilters.length} active)` : ''}
+            </button>
+            <button type="button" onClick={resetFilters} disabled={activeFilters.length === 0} className="rounded-full border border-black/10 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">Clear filters</button>
+          </div>
+        </div>
+        {filtersExpanded ? <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-sm font-medium text-slate-700 lg:col-span-2">Search<input value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} placeholder="Title or description" className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-950" /></label>
+          <label className="text-sm font-medium text-slate-700">Status<select value={filters.status} onChange={(event) => updateFilter('status', event.target.value as HazardWorkflowStatus | '')} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950"><option value="">All statuses</option>{REPORT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+          <label className="text-sm font-medium text-slate-700">AI Priority<select value={filters.aiPriority} onChange={(event) => updateFilter('aiPriority', event.target.value as HazardPriority | '')} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950"><option value="">All priorities</option>{AI_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label>
+          <label className="text-sm font-medium text-slate-700">Department<select value={filters.departmentId} onChange={(event) => updateFilter('departmentId', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950"><option value="">All departments</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>
+          <label className="text-sm font-medium text-slate-700">Hazard category<select value={filters.hazardCategoryId} onChange={(event) => updateFilter('hazardCategoryId', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950"><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+          <label className="text-sm font-medium text-slate-700">Severity level<select value={filters.severityLevelId} onChange={(event) => updateFilter('severityLevelId', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950"><option value="">All severity levels</option>{severityLevels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}</select></label>
+          <label className="text-sm font-medium text-slate-700">Assigned officer<select value={filters.assignedOfficerId} onChange={(event) => updateFilter('assignedOfficerId', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950"><option value="">All officers</option>{officers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}</select></label>
+          <label className="text-sm font-medium text-slate-700">Reporter<select value={filters.reporterId} onChange={(event) => updateFilter('reporterId', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-950"><option value="">All reporters</option>{reporters.map((reporter) => <option key={reporter.id} value={reporter.id}>{reporter.name}</option>)}</select></label>
+          <label className="text-sm font-medium text-slate-700">From date<input type="date" value={filters.fromDate} onChange={(event) => updateFilter('fromDate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-950" /></label>
+          <label className="text-sm font-medium text-slate-700">To date<input type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-950" /></label>
+        </div> : null}
+        {activeFilters.length > 0 ? <div className="mt-4 flex flex-wrap gap-2" aria-label="Active filters">{activeFilters.map(([key, value]) => <span key={key} className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900">{key === 'aiPriority' ? 'AI Priority' : key}: {value}</span>)}</div> : null}
+      </section>
+
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-3xl border border-black/10 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
@@ -593,7 +769,7 @@ export default function HazardsPage() {
               </p>
             ) : null}
           </div>
-          {role !== 'Safety Officer' ? (
+          {role === 'reporter' ? (
             <Link
               href="/hazards/new"
               className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -622,6 +798,9 @@ export default function HazardsPage() {
                   Status
                 </th>
                 <th className="whitespace-nowrap px-6 py-4 font-semibold">
+                  AI recommendation
+                </th>
+                <th className="whitespace-nowrap px-6 py-4 font-semibold">
                   Date Reported
                 </th>
                 <th className="whitespace-nowrap px-6 py-4 font-semibold">
@@ -636,7 +815,7 @@ export default function HazardsPage() {
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-sm text-slate-500"
                   >
                     Loading hazard reports...
@@ -695,6 +874,12 @@ export default function HazardsPage() {
                           {report.status}
                         </span>
                       </td>
+                      <td className="px-6 py-5">
+                        <AiPriorityBadge
+                          priority={report.aiPriority}
+                          confidence={report.aiConfidence}
+                        />
+                      </td>
                       <td className="px-6 py-5 text-slate-700">
                         {formatDate(report.createdAt)}
                       </td>
@@ -736,7 +921,7 @@ export default function HazardsPage() {
               ) : (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-sm text-slate-500"
                   >
                     No hazard reports available.

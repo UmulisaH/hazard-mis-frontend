@@ -4,11 +4,8 @@ import type { ReactNode } from 'react';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import type { AppRole } from '@/lib/auth/types';
+import { hasAnyRole } from '@/lib/auth/roles';
 import { ForbiddenState } from './forbidden-state';
-
-function roleMatches(role: AppRole | null, allowedRoles: readonly AppRole[]) {
-  return role !== null && allowedRoles.includes(role);
-}
 
 export function RequireRole({
   allowedRoles,
@@ -31,7 +28,7 @@ export function RequireRole({
     );
   }
 
-  if (!roleMatches(role, allowedRoles)) {
+  if (!hasAnyRole(role, ...allowedRoles)) {
     if (fallback) {
       return fallback;
     }

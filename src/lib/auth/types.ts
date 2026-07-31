@@ -1,10 +1,9 @@
-export type AppRole = 'Admin' | 'Safety Officer' | 'Reporter';
+export type AppRole = 'admin' | 'manager' | 'safety_officer' | 'reporter';
 
 export interface DecodedJwtPayload {
   sub: string;
   email: string;
-  is_safety_officer: boolean;
-  is_admin: boolean;
+  role: AppRole;
   exp: number;
   iat: number;
 }
@@ -23,8 +22,7 @@ export interface CurrentUserProfile {
   fullName: string;
   jobTitle: string;
   phone: string;
-  isSafetyOfficer: boolean;
-  isAdmin: boolean;
+  role: AppRole;
   department: DepartmentReference | null;
   createdAt: string;
   updatedAt: string;
@@ -33,8 +31,7 @@ export interface CurrentUserProfile {
 export interface AuthenticatedUser {
   id: string;
   email: string;
-  isSafetyOfficer: boolean;
-  isAdmin: boolean;
+  role: AppRole;
 }
 
 export interface LoginRequest {
@@ -53,7 +50,7 @@ export interface RegisterEmployeeRequest {
 }
 
 export interface UpdateUserRoleRequest {
-  isAdmin: boolean;
+  role: AppRole;
 }
 
 export interface AuthResponse {

@@ -26,7 +26,9 @@ import type {
   HazardWorkflowStatus,
   InvestigateHazardReportRequest,
   UpdateCorrectiveActionRequest,
+  UpdateHazardReportStatusRequest,
 } from '@/lib/hazards/types';
+import { normalizeAiConfidence } from '@/lib/hazards/types';
 import type {
   HazardCategoryName,
   SeverityLevelName,
@@ -39,6 +41,7 @@ type HazardWorkflowContextValue = {
   reports: HazardReportRecord[];
   getReportById: (id: string) => HazardReportRecord | null;
   replaceReports: (nextReports: HazardReportRecord[]) => void;
+  fetchHazardReport: (id: string) => Promise<HazardReportRecord>;
   createHazardReport: (
     payload: CreateHazardReportRequest,
     draft: CreateHazardReportDraft,
@@ -46,6 +49,10 @@ type HazardWorkflowContextValue = {
   assignHazardReport: (
     id: string,
     payload: AssignHazardReportRequest,
+  ) => Promise<HazardReportRecord>;
+  updateHazardReportStatus: (
+    id: string,
+    payload: UpdateHazardReportStatusRequest,
   ) => Promise<HazardReportRecord>;
   investigateHazardReport: (
     id: string,
@@ -88,7 +95,10 @@ const INITIAL_HAZARD_REPORTS: HazardReportRecord[] = [
     createdById: 'demo-reporter-1',
     hazardCategory: 'Slip/Trip/Fall',
     severityLevel: 'High',
-    status: 'Under Review',
+    aiPriority: null,
+    aiConfidence: null,
+    recurrenceCount: 0,
+    status: 'Reported',
     assignedOfficerId: 'demo-safety-officer-1',
     investigationNotes: null,
     investigationDetail: null,
@@ -108,7 +118,10 @@ const INITIAL_HAZARD_REPORTS: HazardReportRecord[] = [
     createdById: 'demo-reporter-2',
     hazardCategory: 'Electrical',
     severityLevel: 'Medium',
-    status: 'Submitted',
+    aiPriority: null,
+    aiConfidence: null,
+    recurrenceCount: 0,
+    status: 'Reported',
     assignedOfficerId: null,
     investigationNotes: null,
     investigationDetail: null,
@@ -123,6 +136,22 @@ const INITIAL_HAZARD_REPORTS: HazardReportRecord[] = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function unwrapHazardReportResponse(value: unknown) {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  if (isRecord(value.report)) {
+    return value.report;
+  }
+
+  if (isRecord(value.data)) {
+    return value.data;
+  }
+
+  return value;
 }
 
 function readStringValue(value: unknown, keys: string[] = []) {
@@ -153,14 +182,9 @@ function asNullableString(value: unknown) {
 }
 
 function asStatus(value: unknown): HazardWorkflowStatus | null {
-  return value === 'Draft' ||
-    value === 'Submitted' ||
-    value === 'Under Review' ||
-    value === 'Assigned' ||
+  return value === 'Reported' ||
     value === 'Investigating' ||
     value === 'Corrective Action' ||
-    value === 'Ready for Closure' ||
-    value === 'Resolved' ||
     value === 'Closed'
     ? value
     : null;
@@ -495,11 +519,23 @@ function normalizeHazardReport(
         readStringValue(record.severityName, ['name', 'level', 'label']),
       fallback.severityLevel,
     ),
+    aiPriority:
+      record.aiPriority === 'Low' ||
+      record.aiPriority === 'Medium' ||
+      record.aiPriority === 'High'
+        ? record.aiPriority
+        : null,
+    aiConfidence: normalizeAiConfidence(record.aiConfidence),
+    recurrenceCount:
+      typeof record.recurrenceCount === 'number' &&
+      Number.isFinite(record.recurrenceCount)
+        ? record.recurrenceCount
+        : Number(record.recurrenceCount) || 0,
     status:
       asStatus(record.status) ??
       asStatus(record.workflowStatus) ??
       asStatus(record.reportStatus) ??
-      'Submitted',
+      'Reported',
     assignedOfficerId:
       asNullableString(record.assignedOfficerId) ??
       asNullableString(record.assignedTo) ??
@@ -607,6 +643,23 @@ export function HazardWorkflowProvider({
     dispatch({ type: 'reports/replace', reports: nextReports });
   }, []);
 
+  const fetchHazardReport = useCallback(async (id: string) => {
+    const response = await apiClient.get<unknown>(`/hazard-reports/${id}`);
+    const nextReport = normalizeHazardReport(
+      unwrapHazardReportResponse(response.data),
+      {
+        title: '',
+        summary: '',
+        location: '',
+        hazardCategory: 'Machinery',
+        severityLevel: 'Low',
+      },
+    );
+
+    dispatch({ type: 'report/created', report: nextReport });
+    return nextReport;
+  }, []);
+
   const createHazardReport = useCallback(
     async (payload: CreateHazardReportRequest, draft: CreateHazardReportDraft) => {
       const response = await apiClient.post<unknown>('/hazard-reports', payload);
@@ -633,7 +686,6 @@ export function HazardWorkflowProvider({
 
       const nextReport: HazardReportRecord = {
         ...currentReport,
-        status: 'Investigating',
         assignedOfficerId: payload.assignedOfficerId.trim(),
         updatedAt: deriveNextTimestamp(currentReport),
       };
@@ -644,6 +696,30 @@ export function HazardWorkflowProvider({
       return nextReport;
     },
     [],
+  );
+
+  const updateHazardReportStatus = useCallback(
+    async (id: string, payload: UpdateHazardReportStatusRequest) => {
+      const currentReport = reportsRef.current.find((report) => report.id === id);
+      if (!currentReport) {
+        throw new Error(`Hazard report ${id} was not found.`);
+      }
+
+      if (currentUser?.role !== 'manager') {
+        throw buildPermissionError('Only managers can change report status.');
+      }
+
+      await apiClient.patch(`/hazard-reports/${id}/status`, payload);
+      const nextReport = {
+        ...currentReport,
+        status: payload.status,
+        updatedAt: deriveNextTimestamp(currentReport),
+      };
+      dispatch({ type: 'report/assigned', report: nextReport });
+      toast.success('Hazard status updated successfully.');
+      return nextReport;
+    },
+    [currentUser?.role],
   );
 
   const investigateHazardReport = useCallback(
@@ -658,10 +734,10 @@ export function HazardWorkflowProvider({
         currentReport.assignedOfficer?.id ?? currentReport.assignedOfficerId ?? '',
       ).trim();
       const canUpdateInvestigation =
-        Boolean(currentUser?.isSafetyOfficer) &&
-        !currentUser?.isAdmin &&
+        currentUser?.role === 'manager' ||
+        (currentUser?.role === 'safety_officer' &&
         currentUserId.length > 0 &&
-        currentUserId === assignedOfficerId;
+        currentUserId === assignedOfficerId);
 
       if (currentReport.status === 'Closed') {
         throw buildPermissionError(
@@ -710,7 +786,7 @@ export function HazardWorkflowProvider({
       toast.success('Investigation saved successfully.');
       return nextReport;
     },
-    [currentUser?.id, currentUser?.isAdmin, currentUser?.isSafetyOfficer],
+    [currentUser?.id, currentUser?.role],
   );
 
   const addCorrectiveAction = useCallback(
@@ -725,10 +801,10 @@ export function HazardWorkflowProvider({
         currentReport.assignedOfficer?.id ?? currentReport.assignedOfficerId ?? '',
       ).trim();
       const canUpdateCorrectiveActions =
-        Boolean(currentUser?.isSafetyOfficer) &&
-        !currentUser?.isAdmin &&
+        currentUser?.role === 'manager' ||
+        (currentUser?.role === 'safety_officer' &&
         currentUserId.length > 0 &&
-        currentUserId === assignedOfficerId;
+        currentUserId === assignedOfficerId);
 
       if (currentReport.status === 'Closed') {
         throw buildPermissionError(
@@ -763,7 +839,7 @@ export function HazardWorkflowProvider({
 
       const nextReport: HazardReportRecord = {
         ...currentReport,
-        status: 'Ready for Closure',
+        status: 'Corrective Action',
         correctiveActions: [...currentReport.correctiveActions, createdAction],
         updatedAt: deriveNextTimestamp(currentReport),
       };
@@ -773,7 +849,7 @@ export function HazardWorkflowProvider({
       toast.success('Corrective action added successfully.');
       return nextReport;
     },
-    [currentUser?.id, currentUser?.isAdmin, currentUser?.isSafetyOfficer],
+    [currentUser?.id, currentUser?.role],
   );
 
   const updateCorrectiveAction = useCallback(
@@ -835,8 +911,18 @@ export function HazardWorkflowProvider({
         throw new Error(`Hazard report ${id} was not found.`);
       }
 
-      if (!currentUser?.isAdmin) {
-        throw buildPermissionError('Only admins can close hazard reports.');
+      const assignedOfficerId = String(
+        currentReport.assignedOfficer?.id ?? currentReport.assignedOfficerId ?? '',
+      ).trim();
+      const canClose =
+        currentUser?.role === 'manager' ||
+        (currentUser?.role === 'safety_officer' &&
+          String(currentUser.id).trim() === assignedOfficerId);
+
+      if (!canClose) {
+        throw buildPermissionError(
+          'Only managers or the assigned safety officer can close hazard reports.',
+        );
       }
 
       await apiClient.post(`/hazard-reports/${id}/close`, payload);
@@ -873,7 +959,7 @@ export function HazardWorkflowProvider({
       toast.success('Hazard closed successfully.');
       return nextReport;
     },
-    [currentUser?.isAdmin],
+    [currentUser],
   );
 
   return (
@@ -882,8 +968,10 @@ export function HazardWorkflowProvider({
         reports,
         getReportById,
         replaceReports,
+        fetchHazardReport,
         createHazardReport,
         assignHazardReport,
+        updateHazardReportStatus,
         investigateHazardReport,
         addCorrectiveAction,
         updateCorrectiveAction,

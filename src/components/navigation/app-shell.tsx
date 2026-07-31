@@ -16,7 +16,10 @@ const NAV_LINKS = [
 ] as const;
 
 const ADMIN_LINKS = [
-  { href: '/organization', label: 'Organization', note: 'Master data' },
+  { href: '/institutions', label: 'Institutions', note: 'Institution master data' },
+  { href: '/departments', label: 'Departments', note: 'Department master data' },
+  { href: '/hazard-categories', label: 'Hazard categories', note: 'Hazard reference data' },
+  { href: '/severity-levels', label: 'Severity levels', note: 'Severity reference data' },
   { href: '/users', label: 'Users', note: 'Role management' },
 ] as const;
 
@@ -83,7 +86,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const { currentUser, role, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const navLinks = NAV_LINKS.filter(
-    (link) => !(role === 'Safety Officer' && link.href === '/hazards/new'),
+    (link) => !(role !== 'reporter' && link.href === '/hazards/new'),
   );
 
   return (
@@ -121,7 +124,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               />
             ))}
 
-            <Can anyOf={['Admin']}>
+            <Can anyOf={['admin']}>
               <div className="mt-4">
                 <p className="px-4 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
                   Administration
@@ -142,10 +145,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           </nav>
 
           <div className="mt-6 rounded-3xl border border-black/10 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-950">Need a reset?</p>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              Log out to clear the session and return to the sign-in screen.
-            </p>
             <button
               type="button"
               onClick={logout}
@@ -235,7 +234,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 />
               ))}
 
-              <Can anyOf={['Admin']}>
+              <Can anyOf={['admin']}>
                 <div className="mt-4">
                   <p className="px-4 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
                     Administration

@@ -6,11 +6,49 @@ import { FieldError, FormAlert } from '@/components/auth/form-feedback';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useHazardWorkflow } from './hazard-workflow-provider';
 import { useSafetyOfficers } from './use-safety-officers';
-import type { HazardReportRecord } from '@/lib/hazards/types';
+import type { HazardReportRecord, HazardWorkflowStatus } from '@/lib/hazards/types';
 import type { NormalizedApiError } from '@/lib/api/types';
 
 function isTerminalStatus(status: HazardReportRecord['status']) {
   return status === 'Closed';
+}
+
+function StatusControl({ report }: Readonly<{ report: HazardReportRecord }>) {
+  const { updateHazardReportStatus } = useHazardWorkflow();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const statuses: Array<Extract<HazardWorkflowStatus, 'Reported' | 'Investigating' | 'Corrective Action'>> = [
+    'Reported',
+    'Investigating',
+    'Corrective Action',
+  ];
+
+  async function handleChange(status: (typeof statuses)[number]) {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await updateHazardReportStatus(report.id, { status });
+    } catch (caught) {
+      setError((caught as NormalizedApiError).message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Shell title="Report status" description="Managers can update the operational workflow status.">
+      <select
+        value={report.status === 'Closed' ? 'Closed' : report.status}
+        disabled={isSubmitting || report.status === 'Closed'}
+        onChange={(event) => void handleChange(event.target.value as (typeof statuses)[number])}
+        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
+      >
+        {report.status === 'Closed' ? <option value="Closed">Closed</option> : null}
+        {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+      </select>
+      {error ? <div className="mt-3"><FormAlert tone="error">{error}</FormAlert></div> : null}
+    </Shell>
+  );
 }
 
 function Shell({
@@ -239,7 +277,9 @@ function AssignmentModal({
   }
 
   const hasEligibleOfficers = officers.length > 0;
-  const selectedOfficer = officers.find((officer) => officer.id === assignedOfficerId);
+  const selectedOfficer = officers.find(
+    (officer) => officer.id === assignedOfficerId,
+  );
   const canSubmit = hasEligibleOfficers && assignedOfficerId.trim().length > 0;
 
   return (
@@ -290,10 +330,9 @@ function AssignmentModal({
               </option>
             ))}
           </select>
-          <FieldError message={fieldError?.fieldErrors?.assignedOfficerId?.[0]} />
-          <p className="mt-2 text-xs leading-5 text-slate-500">
-          Only users with safety officer access and no admin role are listed.
-          </p>
+          <FieldError
+            message={fieldError?.fieldErrors?.assignedOfficerId?.[0]}
+          />
         </label>
 
         {selectedOfficer ? (
@@ -330,18 +369,31 @@ export function HazardLifecycleActions({
   report: HazardReportRecord;
 }>) {
   const { currentUser } = useAuth();
-  const { officers, isLoading: isLoadingOfficers, error: officerError } =
-    useSafetyOfficers(Boolean(currentUser?.isAdmin));
+  const {
+    officers,
+    isLoading: isLoadingOfficers,
+    error: officerError,
+  } = useSafetyOfficers(currentUser?.role === 'manager');
   const [closureOpen, setClosureOpen] = useState(false);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
+  if (
+    currentUser?.role !== 'manager' &&
+    currentUser?.role !== 'safety_officer'
+  ) {
+    return null;
+  }
   const assignedOfficerId = String(
     report.assignedOfficer?.id ?? report.assignedOfficerId ?? '',
   ).trim();
-  const isAdmin = Boolean(currentUser?.isAdmin);
   const isClosed = isTerminalStatus(report.status);
-  const canClose = isAdmin;
-  const canAssign = isAdmin && !isClosed;
-  const currentAssignee = officers.find((officer) => officer.id === assignedOfficerId);
+  const isAssignedSafetyOfficer =
+    currentUser?.role === 'safety_officer' &&
+    String(currentUser.id).trim() === assignedOfficerId;
+  const canClose = currentUser?.role === 'manager' || isAssignedSafetyOfficer;
+  const canAssign = currentUser?.role === 'manager' && !isClosed;
+  const currentAssignee = officers.find(
+    (officer) => officer.id === assignedOfficerId,
+  );
   const assigneeName =
     report.assignedOfficer?.fullName || currentAssignee?.fullName || null;
   const assigneeJobTitle =
@@ -349,13 +401,9 @@ export function HazardLifecycleActions({
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Shell
+      {currentUser?.role === 'manager' ? <Shell
         title="Report assignment"
-        description={
-          isClosed
-            ? 'This hazard is already closed.'
-            : 'Assign or reassign the report to an eligible safety officer.'
-        }
+        description={isClosed ? 'This hazard is already closed.' : 'Assign or reassign the report to an eligible safety officer.'}
       >
         <div className="grid gap-4">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
@@ -379,7 +427,7 @@ export function HazardLifecycleActions({
             </button>
           ) : (
             <p className="text-sm leading-6 text-slate-600">
-              Only admins can assign or reassign hazard reports.
+              Only managers can assign or reassign hazard reports.
             </p>
           )}
         </div>
@@ -393,7 +441,9 @@ export function HazardLifecycleActions({
             onClose={() => setAssignmentOpen(false)}
           />
         ) : null}
-      </Shell>
+      </Shell> : null}
+
+      {currentUser?.role === 'manager' ? <StatusControl report={report} /> : null}
 
       <Shell
         title="Record closure"
@@ -413,7 +463,7 @@ export function HazardLifecycleActions({
           </button>
         ) : (
           <p className="text-sm leading-6 text-slate-600">
-            Only admins can close hazard reports.
+            Only managers or the assigned safety officer can close hazard reports.
           </p>
         )}
 
