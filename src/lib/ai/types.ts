@@ -29,6 +29,20 @@ export interface ModelStatus {
   totalRecords: number;
 }
 
+export interface ModelMetrics {
+  version: string;
+  trainedAt: string;
+  evaluatedAt: string;
+  totalRecords: number;
+  trainingRecords: number;
+  testRecords: number;
+  accuracy: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  confusionMatrix: [[number, number], [number, number]];
+}
+
 export interface RetrainResponse {
   message: string;
   status?: ModelStatus;
